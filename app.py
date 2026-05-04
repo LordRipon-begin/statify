@@ -165,6 +165,7 @@ html, body, [class*="css"] {
 def validate_csv(uploaded_file) -> tuple[pd.DataFrame | None, str, str]:
     """
     Try to read and validate the uploaded file.
+    Attempts utf-8 first, falls back to latin1 if that fails.
 
     Returns
     -------
@@ -172,16 +173,31 @@ def validate_csv(uploaded_file) -> tuple[pd.DataFrame | None, str, str]:
     status   : 'success' | 'error'
     message  : human-readable feedback
     """
+    df = None
+
+    # ── Step 1: try reading with utf-8 encoding ───────────────────────────────
     try:
-        df = pd.read_csv(uploaded_file)
+        uploaded_file.seek(0)           # reset pointer to start of file
+        df = pd.read_csv(uploaded_file, encoding="utf-8")
+    except UnicodeDecodeError:
+        # utf-8 failed — try latin1 (handles most European special characters)
+        try:
+            uploaded_file.seek(0)       # reset pointer again before retry
+            df = pd.read_csv(uploaded_file, encoding="latin1")
+        except Exception:
+            return None, "error", "Could not read the file. Make sure it is a valid CSV."
     except Exception:
         return None, "error", "Could not read the file. Make sure it is a valid CSV."
 
-    if df.empty:
+    # ── Step 2: validate the dataframe ───────────────────────────────────────
+    if df is None or df.empty:
         return None, "error", "The file is empty. Please upload a CSV with data."
 
     if len(df.columns) < 2:
         return None, "error", "The file must have at least 2 columns."
+
+    # Strip whitespace from column names (common formatting issue)
+    df.columns = df.columns.str.strip()
 
     return df, "success", ""
 
@@ -241,6 +257,13 @@ def render_page1():
                 unsafe_allow_html=True,
             )
 
+            # Preview — first 5 rows so user confirms it loaded correctly
+            st.markdown(
+                '<div class="upload-label" style="margin-top:1rem">Preview — first 5 rows</div>',
+                unsafe_allow_html=True,
+            )
+            st.dataframe(df.head(5), use_container_width=True)
+
         else:
             # Error card
             st.markdown(
@@ -284,4 +307,4 @@ elif st.session_state.page == 2:
     if st.button("← Back to Upload"):
         st.session_state.page = 1
         st.rerun()
-      
+        
