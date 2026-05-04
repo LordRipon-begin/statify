@@ -291,20 +291,196 @@ def render_page1():
         st.rerun()  # triggers a rerun so the page change takes effect immediately
 
 
-# ── Router ────────────────────────────────────────────────────────────────────
-# Later you will add: elif st.session_state.page == 2: render_page2() etc.
 
+# ── Page 2: Edit Your Data ────────────────────────────────────────────────────
+def render_page2():
+    # ── Guard: must have data ─────────────────────────────────────────────────
+    if st.session_state.df is None:
+        st.markdown(
+            '<div class="status-card status-error">'
+            '&#10005;&nbsp; No data found. Please go back and upload a CSV file.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("Back to Upload", key="p2_back_guard"):
+            st.session_state.page = 1
+            st.rerun()
+        return
+
+    # Work on a dedicated edit copy so the original upload is preserved
+    if "df_edit" not in st.session_state:
+        st.session_state.df_edit = st.session_state.df.copy()
+
+    df = st.session_state.df_edit
+
+    # ── Header ────────────────────────────────────────────────────────────────
+    st.markdown(
+        '<div class="statify-logo" style="font-size:2.2rem">Edit Your <span>Data</span></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="upload-label">Step 2 of 5 &mdash; Review and clean your dataset</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Info pills
+    n_rows, n_cols = df.shape
+    n_missing = int(df.isna().sum().sum())
+    missing_color = "#f55a5a" if n_missing > 0 else "#c8f55a"
+    missing_icon  = "! " if n_missing > 0 else "ok "
+    st.markdown(
+        f'<div class="stat-row" style="margin-bottom:1.25rem">'
+        f'<span class="stat-pill">{n_rows} rows</span>'
+        f'<span class="stat-pill">{n_cols} columns</span>'
+        f'<span class="stat-pill" style="color:{missing_color}">'
+        f'{missing_icon}{n_missing} missing</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Editable table ────────────────────────────────────────────────────────
+    st.markdown(
+        '<div class="upload-label">Edit cells directly &mdash; click any cell to change it</div>',
+        unsafe_allow_html=True,
+    )
+    edited_df = st.data_editor(
+        df,
+        use_container_width=True,
+        num_rows="dynamic",   # lets user add / remove rows inside the table itself
+        key="data_editor_p2",
+    )
+    # Persist every inline edit back to session immediately
+    st.session_state.df_edit = edited_df.copy()
+    df = st.session_state.df_edit   # keep local reference in sync
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # ── Delete rows ───────────────────────────────────────────────────────────
+    st.markdown('<div class="upload-label">Delete rows by index number</div>', unsafe_allow_html=True)
+
+    rows_to_delete = st.multiselect(
+        label="Select rows",
+        options=df.index.tolist(),
+        label_visibility="collapsed",
+        placeholder="Select row numbers to delete...",
+        key="rows_to_delete",
+    )
+
+    if st.button("Delete Selected Rows", key="btn_delete_rows"):
+        if not rows_to_delete:
+            st.warning("No rows selected. Pick at least one row number above.")
+        elif len(rows_to_delete) >= len(df):
+            st.error("Cannot delete all rows. Keep at least one.")
+        else:
+            st.session_state.df_edit = (
+                df.drop(index=rows_to_delete).reset_index(drop=True)
+            )
+            st.success(f"Deleted {len(rows_to_delete)} row(s).")
+            st.rerun()
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # ── Add column ────────────────────────────────────────────────────────────
+    st.markdown('<div class="upload-label">Add a new column</div>', unsafe_allow_html=True)
+
+    col_a, col_b = st.columns([2, 2])
+    with col_a:
+        new_col_name = st.text_input(
+            "Column name",
+            placeholder="e.g. FinalGrade",
+            label_visibility="collapsed",
+            key="new_col_name",
+        )
+    with col_b:
+        new_col_default = st.text_input(
+            "Default value",
+            placeholder="Default value (e.g. 0 or N/A)",
+            label_visibility="collapsed",
+            key="new_col_default",
+        )
+
+    if st.button("Add Column", key="btn_add_col"):
+        name = new_col_name.strip()
+        if not name:
+            st.error("Column name cannot be empty.")
+        elif name in df.columns:
+            st.error(f'A column named "{name}" already exists. Choose a different name.')
+        else:
+            # Store as number if possible, else as string
+            try:
+                default_val = float(new_col_default) if new_col_default.strip() else ""
+            except ValueError:
+                default_val = new_col_default.strip()
+            st.session_state.df_edit[name] = default_val
+            st.success(f'Column "{name}" added with default value: {default_val!r}')
+            st.rerun()
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # ── Drop columns ──────────────────────────────────────────────────────────
+    st.markdown('<div class="upload-label">Remove columns</div>', unsafe_allow_html=True)
+
+    cols_to_drop = st.multiselect(
+        label="Select columns",
+        options=df.columns.tolist(),
+        label_visibility="collapsed",
+        placeholder="Select columns to remove...",
+        key="cols_to_drop",
+    )
+
+    if st.button("Drop Selected Columns", key="btn_drop_cols"):
+        if not cols_to_drop:
+            st.warning("No columns selected.")
+        elif len(cols_to_drop) >= len(df.columns):
+            st.error("Must keep at least one column.")
+        else:
+            st.session_state.df_edit = df.drop(columns=cols_to_drop)
+            st.success(f"Removed {len(cols_to_drop)} column(s): {', '.join(cols_to_drop)}")
+            st.rerun()
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # ── Navigation: back + next ───────────────────────────────────────────────
+    col_back, col_next = st.columns([1, 2])
+
+    with col_back:
+        if st.button("Back", key="p2_back"):
+            # Clear edit copy so a fresh upload starts clean
+            if "df_edit" in st.session_state:
+                del st.session_state["df_edit"]
+            st.session_state.page = 1
+            st.rerun()
+
+    with col_next:
+        if st.button("Next: Variable Selection", key="p2_next"):
+            # Promote edited data as the working dataset for all future pages
+            st.session_state.df = st.session_state.df_edit.copy()
+            st.session_state.page = 3
+            st.rerun()
+
+
+# ── Router ────────────────────────────────────────────────────────────────────
 if st.session_state.page == 1:
     render_page1()
 
 elif st.session_state.page == 2:
-    # Placeholder — Page 2 will be built next
-    st.markdown("### ✅ File loaded. Page 2 coming next!")
-    st.write(f"**File:** {st.session_state.filename}")
-    st.write(f"**Shape:** {st.session_state.df.shape}")
-    st.dataframe(st.session_state.df.head())
+    render_page2()
 
-    if st.button("← Back to Upload"):
-        st.session_state.page = 1
+elif st.session_state.page >= 3:
+    # Placeholder — Page 3 coming next session
+    st.markdown(
+        '<div class="statify-logo" style="font-size:2rem">Data <span>Saved</span></div>',
+        unsafe_allow_html=True,
+    )
+    r, c = st.session_state.df.shape
+    st.markdown(
+        f'<div class="status-card status-success">'
+        f'&#10003;&nbsp; Working dataset ready &mdash; {r} rows x {c} columns'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+    st.dataframe(st.session_state.df.head(), use_container_width=True)
+    if st.button("Back to Edit Data"):
+        st.session_state.page = 2
         st.rerun()
-        
+    
