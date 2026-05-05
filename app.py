@@ -456,7 +456,7 @@ def render_page2():
 # EDIT COLUMN MODE (FIXED + OPTIMIZED)
 # ════════════════════════════════════════════════════════════════
 
-elif st.session_state.p2_mode == "col":
+if st.session_state.p2_mode == "col":
 
     # ✅ ALWAYS use latest dataframe
     df = st.session_state.df_edit
