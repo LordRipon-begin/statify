@@ -298,80 +298,42 @@ def render_page2():
     # ── Guard ─────────────────────────────────────────────────────────────────
     if st.session_state.df is None:
         st.markdown('<div class="status-card status-error">&#10005;&nbsp; No data found. Go back and upload a file.</div>', unsafe_allow_html=True)
-        if st.button("← Back to Upload", key="p2_guard_back"):
+        if st.button("BACK", key="p2_guard_back"):
             st.session_state.page = 1
             st.rerun()
         return
 
     # ── Session state init ────────────────────────────────────────────────────
-    if "df_edit" not in st.session_state:
-        st.session_state.df_edit = st.session_state.df.copy()
-    if "p2_mode" not in st.session_state:
-        st.session_state.p2_mode = None          # None | "row" | "col"
-    if "p2_selection" not in st.session_state:
-        st.session_state.p2_selection = None     # selected row idx or col name
-    if "p2_saved" not in st.session_state:
-        st.session_state.p2_saved = False
-    if "p2_has_changes" not in st.session_state:
-        st.session_state.p2_has_changes = False
+    if "df_edit"        not in st.session_state: st.session_state.df_edit        = st.session_state.df.copy()
+    if "p2_has_changes" not in st.session_state: st.session_state.p2_has_changes = False
+    if "p2_saved"       not in st.session_state: st.session_state.p2_saved       = False
+    if "p2_selection"   not in st.session_state: st.session_state.p2_selection   = None
 
     df = st.session_state.df_edit
 
-    # ── CSS injected here (scoped to page 2 needs) ────────────────────────────
+    # ── CSS ───────────────────────────────────────────────────────────────────
     st.markdown("""
     <style>
-    /* Horizontal scroll wrapper */
-    .hscroll {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-        padding-bottom: 8px;
-    }
-    .hscroll-inner {
-        display: flex;
-        flex-direction: row;
-        gap: 10px;
-        min-width: max-content;
-        padding: 4px 2px;
-    }
-    .cell-box {
-        display: flex;
-        flex-direction: column;
-        min-width: 110px;
-        max-width: 140px;
-    }
-    .cell-label {
-        font-size: 0.68rem;
-        font-weight: 600;
+    .hcell-label {
+        font-size: 0.65rem;
+        font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.09em;
         color: #7c7a75;
-        margin-bottom: 4px;
+        margin-bottom: 3px;
         white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
     }
-    /* Active save button override */
-    .save-active > button {
+    div.save-btn-active > div > button {
         background: #c8f55a !important;
         color: #0a0a0f !important;
+        font-weight: 700 !important;
     }
-    .save-inactive > button {
+    div.save-btn-inactive > div > button {
         background: #1e1e28 !important;
         color: #3a3a48 !important;
-        cursor: not-allowed !important;
+        border: 1px solid #2a2a35 !important;
         pointer-events: none !important;
-    }
-    /* Mode buttons */
-    div[data-testid="column"] .stButton > button {
-        border: 1.5px solid #2a2a35 !important;
-        background: #13131a !important;
-        color: #f0ede8 !important;
-        font-size: 0.88rem !important;
-        padding: 0.5rem 1rem !important;
-    }
-    div[data-testid="column"] .stButton > button:hover {
-        border-color: #c8f55a !important;
-        color: #c8f55a !important;
+        cursor: not-allowed !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -387,242 +349,198 @@ def render_page2():
         f'<span class="stat-pill">{n_rows} rows</span>'
         f'<span class="stat-pill">{n_cols} columns</span>'
         f'<span class="stat-pill" style="color:{"#f55a5a" if n_missing>0 else "#c8f55a"}">'
-        f'{"⚠ "+str(n_missing)+" missing" if n_missing>0 else "✓ No missing values"}'
+        f'{"&#9888; "+str(n_missing)+" missing" if n_missing>0 else "&#10003; No missing"}'
         f'</span></div>',
         unsafe_allow_html=True,
     )
 
-    # ── READ-ONLY PREVIEW ─────────────────────────────────────────────────────
+    # ── READ-ONLY PREVIEW — index starts at 1 ────────────────────────────────
     st.markdown('<div class="upload-label">Preview (read-only)</div>', unsafe_allow_html=True)
-    st.dataframe(df, use_container_width=True, hide_index=False)
-
+    preview_df = df.copy()
+    preview_df.index = range(1, len(preview_df) + 1)
+    st.dataframe(preview_df, use_container_width=True, hide_index=False)
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-    # ── MODE SELECTOR BUTTONS ─────────────────────────────────────────────────
+    # ── EDIT MODE — radio buttons ─────────────────────────────────────────────
     st.markdown('<div class="upload-label">Select edit mode</div>', unsafe_allow_html=True)
-    btn_col1, btn_col2, _ = st.columns([1, 1, 2])
+    edit_mode = st.radio(
+        "edit_mode",
+        options=["Edit Row", "Edit Column"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="p2_edit_mode",
+    )
 
-    with btn_col1:
-        if st.button("✎  Edit Row", key="btn_mode_row"):
-            st.session_state.p2_mode = "row"
-            st.session_state.p2_selection = None
-            st.session_state.p2_has_changes = False
-            st.rerun()
-
-    with btn_col2:
-        if st.button("⊟  Edit Column", key="btn_mode_col"):
-            st.session_state.p2_mode = "col"
-            st.session_state.p2_selection = None
-            st.session_state.p2_has_changes = False
-            st.rerun()
+    # Reset change tracking when mode switches
+    if st.session_state.p2_selection != edit_mode:
+        st.session_state.p2_selection   = edit_mode
+        st.session_state.p2_has_changes = False
 
     st.markdown("<br>", unsafe_allow_html=True)
+
+    # helper: safely cast string → original dtype
+    def cast(val, dtype):
+        if val == "":
+            if pd.api.types.is_integer_dtype(dtype): return pd.NA
+            if pd.api.types.is_float_dtype(dtype):   return float("nan")
+            return pd.NA
+        try:
+            if pd.api.types.is_integer_dtype(dtype): return int(val)
+            if pd.api.types.is_float_dtype(dtype):   return float(val)
+        except (ValueError, TypeError):
+            pass
+        return val
 
     # ══════════════════════════════════════════════════════════════════════════
     # EDIT ROW MODE
     # ══════════════════════════════════════════════════════════════════════════
-    if st.session_state.p2_mode == "row":
+    if edit_mode == "Edit Row":
 
-        # Row selector: Row 0 = column names, Row 1..N = data rows
-        row_options = ["Row 0 — Column Names"] + [f"Row {i}" for i in range(1,len(df)+1)]
+        # Row 0 = column names | Row 1..N = data rows (1-based, matches preview)
+        row_options = ["Row 0 — Column Names"] + [f"Row {i}" for i in range(1, len(df) + 1)]
 
         selected = st.selectbox(
-            "Select row",
+            "Select row to edit",
             options=row_options,
             label_visibility="collapsed",
             key="p2_row_selector",
         )
-        # Update selection and reset change flag when user picks a different row
-        if st.session_state.p2_selection != selected:
-            st.session_state.p2_selection = selected
-            st.session_state.p2_has_changes = False
 
         st.markdown(f'<div class="upload-label" style="margin-top:1rem">Editing: {selected}</div>', unsafe_allow_html=True)
+        col_list = df.columns.tolist()
+        ui       = st.columns(len(col_list))
 
-        # ── Row 0: edit column names ──────────────────────────────────────────
+        # ── Row 0: edit column/variable names ─────────────────────────────────
         if selected == "Row 0 — Column Names":
-            col_list = df.columns.tolist()
-
-            # Build horizontal inputs using Streamlit columns
-            # Cap at 8 visible columns at once; user scrolls via native overflow
-            st.markdown('<div class="hscroll"><div class="hscroll-inner" id="row0-inputs">', unsafe_allow_html=True)
-            ui_cols = st.columns(len(col_list))
             new_names = []
             for i, col_name in enumerate(col_list):
-                with ui_cols[i]:
-                    st.markdown(f'<div class="cell-label">Col {i+1}</div>', unsafe_allow_html=True)
-                    val = st.text_input(
-                        f"cn_{i}",
-                        value=col_name,
-                        label_visibility="collapsed",
-                        key=f"p2_colname_{i}",
-                    )
-                    new_names.append(val.strip())
-            st.markdown('</div></div>', unsafe_allow_html=True)
+                with ui[i]:
+                    st.markdown(f'<div class="hcell-label">Col {i+1}</div>', unsafe_allow_html=True)
+                    v = st.text_input("_", value=col_name,
+                                      label_visibility="collapsed",
+                                      key=f"p2_ri_{i}")
+                    new_names.append(v.strip())
+            st.session_state.p2_has_changes = (new_names != col_list)
 
-            # Detect changes
-            has_changes = new_names != col_list
-            st.session_state.p2_has_changes = has_changes
-
-        # ── Normal data row ───────────────────────────────────────────────────
+        # ── Data row (Row 1, Row 2 … matches preview numbering exactly) ───────
         else:
-            row_idx = int(selected.split(" ")[1]) - 1
-            row_data = df.iloc[row_idx]
-            col_list  = df.columns.tolist()
-
-            ui_cols = st.columns(len(col_list))
-            edited_vals = {}
-            original_vals = {}
+            # "Row 5" → df index 4  (user sees 1-based, Python uses 0-based)
+            row_idx      = int(selected.split(" ")[1]) - 1
+            row_data     = df.iloc[row_idx]
+            original_map = {c: ("" if pd.isna(row_data[c]) else str(row_data[c])) for c in col_list}
+            edited_map   = {}
 
             for i, col_name in enumerate(col_list):
-                with ui_cols[i]:
-                    current = row_data[col_name]
-                    display  = "" if pd.isna(current) else str(current)
-                    original_vals[col_name] = display
-                    st.markdown(f'<div class="cell-label">{col_name}</div>', unsafe_allow_html=True)
-                    new_val = st.text_input(
-                        f"rv_{i}",
-                        value=display,
-                        label_visibility="collapsed",
-                        key=f"p2_rowval_{i}",
-                    )
-                    edited_vals[col_name] = new_val
+                with ui[i]:
+                    st.markdown(f'<div class="hcell-label">{col_name}</div>', unsafe_allow_html=True)
+                    v = st.text_input("_", value=original_map[col_name],
+                                      label_visibility="collapsed",
+                                      key=f"p2_ri_{i}")
+                    edited_map[col_name] = v
 
-            has_changes = edited_vals != original_vals
-            st.session_state.p2_has_changes = has_changes
+            st.session_state.p2_has_changes = (edited_map != original_map)
 
-        # ── Save button (row mode) ────────────────────────────────────────────
+        # ── SAVE button ───────────────────────────────────────────────────────
         st.markdown("<br>", unsafe_allow_html=True)
-        save_class = "save-active" if st.session_state.p2_has_changes else "save-inactive"
-        st.markdown(f'<div class="{save_class}">', unsafe_allow_html=True)
-        save_clicked = st.button("💾  Save", key="p2_save_row", disabled=not st.session_state.p2_has_changes)
+        cls = "save-btn-active" if st.session_state.p2_has_changes else "save-btn-inactive"
+        st.markdown(f'<div class="{cls}">', unsafe_allow_html=True)
+        save_clicked = st.button("SAVE", key="p2_save_row",
+                                 disabled=not st.session_state.p2_has_changes)
         st.markdown('</div>', unsafe_allow_html=True)
 
         if save_clicked:
             if selected == "Row 0 — Column Names":
-                # Validate column names
                 if any(n == "" for n in new_names):
                     st.error("Column names cannot be empty.")
                 elif len(new_names) != len(set(new_names)):
-                    st.error("Duplicate column names found. Each must be unique.")
+                    st.error("Duplicate column names found.")
                 else:
-                    rename_map = dict(zip(col_list, new_names))
-                    st.session_state.df_edit = df.rename(columns=rename_map)
-                    st.session_state.p2_saved = True
+                    st.session_state.df_edit = df.rename(columns=dict(zip(col_list, new_names)))
                     st.session_state.p2_has_changes = False
-                    st.success("✓ Column names updated.")
+                    st.session_state.p2_saved = True
+                    st.success("Column names saved.")
                     st.rerun()
             else:
                 new_df = df.copy()
-                for col_name, new_val in edited_vals.items():
-                    dtype = df[col_name].dtype
-                    try:
-                        if pd.api.types.is_integer_dtype(dtype):
-                            new_df.at[row_idx, col_name] = int(new_val) if new_val != "" else pd.NA
-                        elif pd.api.types.is_float_dtype(dtype):
-                            new_df.at[row_idx, col_name] = float(new_val) if new_val != "" else float("nan")
-                        else:
-                            new_df.at[row_idx, col_name] = new_val if new_val != "" else pd.NA
-                    except (ValueError, TypeError):
-                        new_df.at[row_idx, col_name] = new_val
+                for col_name, val in edited_map.items():
+                    new_df.at[row_idx, col_name] = cast(val, df[col_name].dtype)
                 st.session_state.df_edit = new_df
-                st.session_state.p2_saved = True
                 st.session_state.p2_has_changes = False
-                st.success(f"✓ Row {row_idx+1} saved.")
+                st.session_state.p2_saved = True
+                st.success(f"Row {row_idx + 1} saved.")
                 st.rerun()
 
     # ══════════════════════════════════════════════════════════════════════════
     # EDIT COLUMN MODE
     # ══════════════════════════════════════════════════════════════════════════
-    elif st.session_state.p2_mode == "col":
+    else:
 
         selected_col = st.selectbox(
-            "Select column",
+            "Select column to edit",
             options=df.columns.tolist(),
             label_visibility="collapsed",
             key="p2_col_selector",
         )
-        if st.session_state.p2_selection != selected_col:
-            st.session_state.p2_selection = selected_col
-            st.session_state.p2_has_changes = False
 
-        st.markdown(f'<div class="upload-label" style="margin-top:1rem">Editing column: {selected_col} &mdash; {len(df)} values</div>', unsafe_allow_html=True)
+        n_vals = len(df)
+        st.markdown(f'<div class="upload-label" style="margin-top:1rem">Editing: {selected_col} &mdash; {n_vals} values</div>', unsafe_allow_html=True)
 
-        col_data   = df[selected_col]
-        indices    = col_data.index.tolist()
-        edited_col = {}
-        original_col = {}
+        col_data     = df[selected_col]
+        original_col = {idx: ("" if pd.isna(col_data[idx]) else str(col_data[idx])) for idx in df.index}
+        edited_col   = {}
 
-        # All values in ONE horizontal row
-        ui_cols = st.columns(len(indices))
-        for i, idx in enumerate(indices):
-            with ui_cols[i]:
-                current  = col_data[idx]
-                display  = "" if pd.isna(current) else str(current)
-                original_col[idx] = display
-                st.markdown(f'<div class="cell-label">Row {idx}</div>', unsafe_allow_html=True)
-                new_val = st.text_input(
-                    f"cv_{idx}",
-                    value=display,
-                    label_visibility="collapsed",
-                    key=f"p2_colval_{idx}",
-                )
-                edited_col[idx] = new_val
+        # All values in ONE horizontal row — labels show Row 1, Row 2 … (1-based)
+        ui = st.columns(n_vals)
+        for i, idx in enumerate(df.index):
+            with ui[i]:
+                st.markdown(f'<div class="hcell-label">Row {i+1}</div>', unsafe_allow_html=True)
+                v = st.text_input("_", value=original_col[idx],
+                                  label_visibility="collapsed",
+                                  key=f"p2_cv_{idx}")
+                edited_col[idx] = v
 
-        has_changes = edited_col != original_col
-        st.session_state.p2_has_changes = has_changes
+        st.session_state.p2_has_changes = (edited_col != original_col)
 
-        # ── Save button (col mode) ────────────────────────────────────────────
+        # ── SAVE button ───────────────────────────────────────────────────────
         st.markdown("<br>", unsafe_allow_html=True)
-        save_class = "save-active" if has_changes else "save-inactive"
-        st.markdown(f'<div class="{save_class}">', unsafe_allow_html=True)
-        save_clicked = st.button("💾  Save", key="p2_save_col", disabled=not has_changes)
+        cls = "save-btn-active" if st.session_state.p2_has_changes else "save-btn-inactive"
+        st.markdown(f'<div class="{cls}">', unsafe_allow_html=True)
+        save_clicked = st.button("SAVE", key="p2_save_col",
+                                 disabled=not st.session_state.p2_has_changes)
         st.markdown('</div>', unsafe_allow_html=True)
 
         if save_clicked:
-            new_df   = df.copy()
-            dtype    = df[selected_col].dtype
-            for idx, new_val in edited_col.items():
-                try:
-                    if pd.api.types.is_integer_dtype(dtype):
-                        new_df.at[idx, selected_col] = int(new_val) if new_val != "" else pd.NA
-                    elif pd.api.types.is_float_dtype(dtype):
-                        new_df.at[idx, selected_col] = float(new_val) if new_val != "" else float("nan")
-                    else:
-                        new_df.at[idx, selected_col] = new_val if new_val != "" else pd.NA
-                except (ValueError, TypeError):
-                    new_df.at[idx, selected_col] = new_val
+            new_df = df.copy()
+            dtype  = df[selected_col].dtype
+            for idx, val in edited_col.items():
+                new_df.at[idx, selected_col] = cast(val, dtype)
             st.session_state.df_edit = new_df
-            st.session_state.p2_saved = True
             st.session_state.p2_has_changes = False
-            st.success(f"✓ Column '{selected_col}' saved.")
+            st.session_state.p2_saved = True
+            st.success(f"Column '{selected_col}' saved.")
             st.rerun()
-
-    # ── No mode selected yet ──────────────────────────────────────────────────
-    else:
-        st.markdown(
-            '<div class="status-card status-idle">&#9432;&nbsp; Click <b>Edit Row</b> or <b>Edit Column</b> above to start editing.</div>',
-            unsafe_allow_html=True,
-        )
 
     # ── Navigation ────────────────────────────────────────────────────────────
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
-    col_back, col_next = st.columns([1, 1])
+    c_back, c_next = st.columns([1, 1])
 
-    with col_back:
-        if st.button("← Back", key="p2_back"):
-            for key in ["df_edit", "p2_mode", "p2_selection", "p2_saved", "p2_has_changes"]:
-                st.session_state.pop(key, None)
+    with c_back:
+        if st.button("BACK", key="p2_back"):
+            for k in ["df_edit","p2_has_changes","p2_saved","p2_selection"]:
+                st.session_state.pop(k, None)
             st.session_state.page = 1
             st.rerun()
 
-    with col_next:
-        if st.button("Next", key="p2_next"):
+    with c_next:
+        if st.button("NEXT", key="p2_next"):
             st.session_state.df = st.session_state.df_edit.copy()
-            for key in ["p2_mode", "p2_selection", "p2_saved", "p2_has_changes"]:
-                st.session_state.pop(key, None)
+            for k in ["p2_has_changes","p2_saved","p2_selection"]:
+                st.session_state.pop(k, None)
             st.session_state.page = 3
             st.rerun()
+            
+
+
 
             
 
