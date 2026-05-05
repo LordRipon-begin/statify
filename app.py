@@ -424,7 +424,7 @@ def render_page2():
     if st.session_state.p2_mode == "row":
 
         # Row selector: Row 0 = column names, Row 1..N = data rows
-        row_options = ["Row 0 — Column Names"] + [f"Row {i+1}" for i in range(len(df))]
+        row_options = ["Row 0 — Column Names"] + [f"Row {i}" for i in range(1,len(df)+1)]
 
         selected = st.selectbox(
             "Select row",
