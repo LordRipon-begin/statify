@@ -414,7 +414,8 @@ def render_page2():
             st.session_state.p2_has_changes = has_changes
 
         # ── Save button ───────────────────────────────────────────────────────
-        st.markdown("<br>", unsafe_allow_html=True)
+       
+st.markdown("<br>", unsafe_allow_html=True)
         save_class = "save-active" if st.session_state.p2_has_changes else "save-inactive"
         st.markdown(f'<div class="{save_class}">', unsafe_allow_html=True)
         save_clicked = st.button("💾  Save", key="p2_save_row", disabled=not st.session_state.p2_has_changes)
