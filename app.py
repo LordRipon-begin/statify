@@ -653,4 +653,4 @@ elif st.session_state.page >= 4:
     )
     if st.button("← Back to Configure"):
         st.session_state.page = 3
-        st.rerun(
+        st.rerun()
