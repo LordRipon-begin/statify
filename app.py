@@ -1,6 +1,39 @@
 import streamlit as st
 import pandas as pd
 
+# ← ADD THIS RIGHT HERE, after imports, before anything else
+
+STAT_TOOLS = {
+    "Descriptive Statistics": {
+        "fields": []
+    },
+    "Correlation Analysis": {
+        "fields": [
+            {"key": "method", "label": "Method", "type": "select",
+             "options": ["pearson", "spearman", "kendall"]}
+        ]
+    },
+    "Hypothesis Testing (t-test)": {
+        "fields": [
+            {"key": "confidence", "label": "Confidence Level", "type": "select",
+             "options": ["0.90", "0.95", "0.99"]},
+            {"key": "tail", "label": "Tail", "type": "select",
+             "options": ["two-tailed", "one-tailed (left)", "one-tailed (right)"]}
+        ]
+    },
+    "Linear Regression": {
+        "fields": [
+            {"key": "target", "label": "Target Variable (Y)", "type": "text"}
+        ]
+    },
+    "ANOVA": {
+        "fields": [
+            {"key": "confidence", "label": "Confidence Level", "type": "select",
+             "options": ["0.90", "0.95", "0.99"]}
+        ]
+    },
+}
+
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Statify",
@@ -576,6 +609,143 @@ def render_page2():
             st.success(f"✓ Column '{selected_col}' saved.")
             st.rerun()
 
+
+# -------page3-------
+def render_page3():
+    if st.session_state.df is None:
+        st.markdown('<div class="status-card status-error">✕ No data. Go back.</div>', unsafe_allow_html=True)
+        if st.button("← Back", key="p3_guard"):
+            st.session_state.page = 2; st.rerun()
+        return
+
+    df = st.session_state.df
+    all_cols = df.columns.tolist()
+    blocks = st.session_state.p3_blocks
+    active = st.session_state.p3_active_block
+    MAX_BLOCKS = 5
+
+    # ── Header ────────────────────────────────────────────────────────────
+    st.markdown('<div class="statify-logo" style="font-size:2.2rem">Configure <span>Analysis</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="upload-label">Step 3 of 5 — Build up to {MAX_BLOCKS} analysis configurations</div>', unsafe_allow_html=True)
+
+    # Progress pills for saved blocks
+    if blocks:
+        pills = "".join([
+            f'<span class="stat-pill" style="color:#c8f55a">✓ Block {i+1}</span>'
+            for i in range(len(blocks))
+        ])
+        st.markdown(f'<div class="stat-row" style="margin-bottom:1rem">{pills}</div>', unsafe_allow_html=True)
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # ── Active block editor ───────────────────────────────────────────────
+    block_num = active + 1  # 1-based for display
+    st.markdown(f'<div class="upload-label">Block {block_num} of {MAX_BLOCKS}</div>', unsafe_allow_html=True)
+
+    # A. Variable selection
+    st.markdown("**Select Variables**", unsafe_allow_html=False)
+    selected_vars = st.multiselect(
+        "Choose one or more columns",
+        options=all_cols,
+        default=None,
+        label_visibility="collapsed",
+        key=f"p3_vars_{active}",
+    )
+
+    # B. Tool selection
+    st.markdown("**Select Statistical Tools**")
+    selected_tools = st.multiselect(
+        "Choose tools to apply",
+        options=list(STAT_TOOLS.keys()),
+        default=None,
+        label_visibility="collapsed",
+        key=f"p3_tools_{active}",
+    )
+
+    # C. Dynamic config per tool
+    tool_configs = {}
+    if selected_tools:
+        st.markdown("**Configure Tools**")
+        for tool in selected_tools:
+            fields = STAT_TOOLS[tool]["fields"]
+            if not fields:
+                st.markdown(f'<div class="status-card status-idle">ℹ {tool} — no extra configuration needed.</div>', unsafe_allow_html=True)
+                continue
+            with st.expander(f"⚙ {tool}", expanded=True):
+                cfg = {}
+                for field in fields:
+                    if field["type"] == "select":
+                        cfg[field["key"]] = st.selectbox(
+                            field["label"],
+                            options=field["options"],
+                            key=f"p3_{active}_{tool}_{field['key']}",
+                        )
+                    elif field["type"] == "text":
+                        cfg[field["key"]] = st.text_input(
+                            field["label"],
+                            key=f"p3_{active}_{tool}_{field['key']}",
+                        )
+                tool_configs[tool] = cfg
+
+    # D. Save block button
+    st.markdown("<br>", unsafe_allow_html=True)
+    can_save = bool(selected_vars and selected_tools)
+    save_class = "save-active" if can_save else "save-inactive"
+    st.markdown(f'<div class="{save_class}">', unsafe_allow_html=True)
+    if st.button(f"💾 Save Block {block_num}", key=f"p3_save_{active}", disabled=not can_save):
+        config = {
+            "block": block_num,
+            "variables": selected_vars,
+            "tools": selected_tools,
+            "tool_configs": tool_configs,
+        }
+        # Replace or append
+        if active < len(blocks):
+            blocks[active] = config
+        else:
+            blocks.append(config)
+        st.session_state.p3_blocks = blocks
+        st.success(f"✓ Block {block_num} saved.")
+
+        # Auto-advance to next block if under limit
+        if active + 1 < MAX_BLOCKS:
+            st.session_state.p3_active_block = active + 1
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # ── Saved blocks summary (collapsible) ───────────────────────────────
+    if blocks:
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+        st.markdown('<div class="upload-label">Saved Configurations</div>', unsafe_allow_html=True)
+        for i, b in enumerate(blocks):
+            with st.expander(f"Block {b['block']} — {', '.join(b['variables'][:3])}{'...' if len(b['variables'])>3 else ''}", expanded=False):
+                st.markdown(f"**Variables:** {', '.join(b['variables'])}")
+                st.markdown(f"**Tools:** {', '.join(b['tools'])}")
+                for tool, cfg in b["tool_configs"].items():
+                    if cfg:
+                        st.markdown(f"*{tool}:* " + ", ".join(f"{k}={v}" for k, v in cfg.items()))
+                if st.button(f"✎ Edit Block {b['block']}", key=f"p3_edit_{i}"):
+                    st.session_state.p3_active_block = i
+                    st.rerun()
+
+    # ── Navigation ────────────────────────────────────────────────────────
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    col_back, col_next = st.columns([1, 2])
+
+    with col_back:
+        if st.button("← Back", key="p3_back"):
+            st.session_state.page = 2
+            st.rerun()
+
+    with col_next:
+        can_proceed = len(blocks) >= 1
+        proceed_class = "save-active" if can_proceed else "save-inactive"
+        st.markdown(f'<div class="{proceed_class}">', unsafe_allow_html=True)
+        if st.button("Next → Run Analysis", key="p3_next", disabled=not can_proceed):
+            st.session_state.page = 4
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
 # ── Router ────────────────────────────────────────────────────────────────────
 if st.session_state.page == 1:
     render_page1()
@@ -583,16 +753,15 @@ if st.session_state.page == 1:
 elif st.session_state.page == 2:
     render_page2()
 
-elif st.session_state.page >= 3:
-    st.markdown('<div class="statify-logo" style="font-size:2rem">Data <span>Saved</span></div>', unsafe_allow_html=True)
-    r, c = st.session_state.df.shape
+elif st.session_state.page == 3:
+    render_page3()
+
+elif st.session_state.page >= 4:
+    st.markdown('<div class="statify-logo" style="font-size:2rem">Analysis <span>Ready</span></div>', unsafe_allow_html=True)
     st.markdown(
-        f'<div class="status-card status-success">✓&nbsp; Working dataset ready — {r} rows × {c} columns</div>',
+        f'<div class="status-card status-success">✓ {len(st.session_state.p3_blocks)} configuration(s) queued.</div>',
         unsafe_allow_html=True,
     )
-    display_df = st.session_state.df.head().copy()
-    display_df.index = range(1, len(display_df) + 1)
-    st.dataframe(display_df, use_container_width=True)
-    if st.button("Back to Edit Data"):
-        st.session_state.page = 2
+    if st.button("← Back to Configure"):
+        st.session_state.page = 3
         st.rerun()
