@@ -49,6 +49,11 @@ if "page" not in st.session_state:
     st.session_state.page = 1
 if "filename" not in st.session_state:
     st.session_state.filename = ""
+if "p3_blocks" not in st.session_state:
+    st.session_state.p3_blocks = []
+
+if "p3_active_block" not in st.session_state:
+    st.session_state.p3_active_block = 0
 
 # ── Global CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
