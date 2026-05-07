@@ -1,0 +1,11 @@
+streamlit
+pandas
+numpy
+scipy
+plotly
+statsmodels
+scikit-learn
+openpyxl
+xlrd
+reportlab
+pyreadstat
